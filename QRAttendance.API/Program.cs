@@ -92,6 +92,22 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy =>
+        {
+            policy
+                .WithOrigins(
+                    "https://localhost:5001", // MudBlazor dev
+                    "http://localhost:5001"
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });+
+});
+
+
 var app = builder.Build();
 
 // ==============================
@@ -105,6 +121,7 @@ if (app.Environment.IsDevelopment())
 
 // ❌ DO NOT redirect HTTPS (breaks mobile)
 // app.UseHttpsRedirection();
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
