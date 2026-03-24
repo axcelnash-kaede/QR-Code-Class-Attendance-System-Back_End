@@ -25,7 +25,7 @@ public AuthController(IConfiguration configuration, UserRepository repo)
 
     // REGISTER STUDENT
     [HttpPost("register")]
-    public async Task<IActionResult> Register(RegisterDTO dto)
+    public async Task<IActionResult> Register(RegisterDto dto)
     {
         if (await _repo.EmailExistsAsync(dto.Email))
             return BadRequest("Email already exists");
@@ -57,14 +57,14 @@ public AuthController(IConfiguration configuration, UserRepository repo)
 
     // LOGIN
     [HttpPost("login")]
-public async Task<IActionResult> Login(LoginDTO dto)
+    public async Task<IActionResult> Login(LoginDto dto)
     {
     var user = await _repo.GetByEmailAsync(dto.Email);
 
         if (user == null)
         return Unauthorized("Invalid email or password");
 
-    if (!BCrypt.Net.BCrypt.Verify(dto.PasswordHash, user.PasswordHash))
+    if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         return Unauthorized("Invalid email or password");
 
     var jwtSettings = _configuration.GetSection("Jwt");

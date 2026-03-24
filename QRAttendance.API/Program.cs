@@ -4,7 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using QRAttendance.API.Data;
 using QRAttendance.API.Repositories;
 using QRAttendance.API.Services;
-using QRAttendanceAPI.Repositories;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,6 +58,7 @@ builder.Services.AddSwaggerGen(options =>
 // ==============================
 // DAPPER / SERVICES
 // ==============================
+
 builder.Services.AddScoped<AttendanceRepository>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<UserRepository>();

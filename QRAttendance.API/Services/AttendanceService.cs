@@ -1,14 +1,19 @@
-﻿using System;
+﻿using QRAttendance.API.Helpers;
+using System;
 using System.Threading.Tasks;
 using QRAttendance.API.Models;
+using QRCoder;
+using System.Drawing;
+using System.Drawing.Imaging;
 using QRAttendance.API.Repositories;
-using QRAttendanceAPI.Repositories;
+using QRAttendance.API.DTOs;
 
 namespace QRAttendance.API.Services;
 
 public class AttendanceService
 {
     private readonly AttendanceRepository _repo;
+    private DateTime startTime;
 
     public AttendanceService(AttendanceRepository repo)
     {
@@ -47,6 +52,31 @@ public class AttendanceService
         return status;
     }
 
+
+
+
+    public async Task<int> CreateSession(CreateAttendanceSessionDto dto, int teacherId)
+    {
+        // generate QR code as base64 string
+        string qrCode = QRAttendance.API.Helpers.QRCodeHelper.GenerateQRCode(dto.Subject);
+
+        // calculate expiration time
+        var expirationTime = DateTime.Now.AddMinutes(dto.DurationMinutes);
+        var startTime = DateTime.Now;
+
+        // create the session in the database via _repo
+        int newSessionId = await _repo.CreateSession(
+            dto.Title,
+            dto.Subject,
+            qrCode,
+            expirationTime,
+            startTime,
+            teacherId
+        );
+
+        return newSessionId;
+    }
+
     public async Task<string> CloseSession(int sessionId)
     {
         var session = await _repo.GetSession(sessionId);
@@ -61,5 +91,10 @@ public class AttendanceService
         await _repo.MarkAbsentStudents(sessionId);
 
         return "Session closed";
+    }
+
+    internal async Task<byte[]> GenerateQrCodeAsync(int sessionId)
+    {
+        throw new NotImplementedException();
     }
 }
