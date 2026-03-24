@@ -1,148 +1,170 @@
 ﻿using Dapper;
 using Microsoft.Data.SqlClient;
 using System.Data;
+using QRAttendance.API.Data;
 using QRAttendance.API.Models;
 
-public class AttendanceRepository : IAttendanceRepository
+
+namespace QRAttendanceAPI.Repositories;
+
+public class AttendanceRepository
 {
-    private readonly IConfiguration _config;
+    private readonly DapperContext _context;
 
-    public AttendanceRepository(IConfiguration config)
+    public AttendanceRepository(DapperContext context)
     {
-        _config = config;
+        _context = context;
     }
 
-    // ======================================================
-    // DATABASE CONNECTION
-    // ======================================================
-    private IDbConnection CreateConnection()
-        => new SqlConnection(_config.GetConnectionString("DefaultConnection"));
-
-    // ======================================================
-    // SESSIONS
-    // ======================================================
-    public async Task<int> CreateSessionAsync(string title)
+    public async Task<AttendanceSession?> GetSession(int sessionId)
     {
-        using var connection = CreateConnection();
+        var query = @"
+SELECT *
+FROM AttendanceSession
+WHERE Id = @Id
+";
 
-        return await connection.ExecuteScalarAsync<int>(
-            "SP_QRAttendanceDB_CreateSession",
-            new { Title = title },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task<IEnumerable<AttendanceSession>> GetAllSessionsAsync()
-    {
-        using var connection = CreateConnection();
-
-        return await connection.QueryAsync<AttendanceSession>(
-            "SP_QRAttendanceDB_GetAllSessions",
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task<AttendanceSession?> GetSessionByIdAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
+        using var connection = _context.CreateConnection();
 
         return await connection.QueryFirstOrDefaultAsync<AttendanceSession>(
-            "SP_QRAttendanceDB_GetSessionById",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
+            query,
+            new { Id = sessionId }
         );
     }
 
-    public async Task UpdateSessionAsync(int id, string title, bool isActive)
+    public async Task<AttendanceRecord?> GetAttendance(int sessionId, int studentId)
     {
-        using var connection = CreateConnection();
+        var query = @"
+SELECT *
+FROM AttendanceRecords
+WHERE SessionId = @SessionId
+AND StudentId = @StudentId
+";
 
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_UpdateSession",
+        using var connection = _context.CreateConnection();
+
+        return await connection.QueryFirstOrDefaultAsync<AttendanceRecord>(
+            query,
             new
             {
-                SessionId = id,
-                Title = title,
-                IsActive = isActive
-            },
-            commandType: CommandType.StoredProcedure
+                SessionId = sessionId,
+                StudentId = studentId
+            }
         );
     }
 
-    public async Task DeleteSessionAsync(int sessionId)
+    public async Task InsertAttendance(
+        int sessionId,
+        int studentId,
+        string status,
+        string deviceId
+    )
     {
-        using var connection = CreateConnection();
+        var query = @"
+INSERT INTO AttendanceRecords
+(
+    SessionId,
+    StudentId,
+    Status,
+    DeviceId
+)
+VALUES
+(
+    @SessionId,
+    @StudentId,
+    @Status,
+    @DeviceId
+)
+";
+
+        using var connection = _context.CreateConnection();
 
         await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_DeleteSession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task CloseSessionAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
-
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_CloseSession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    // ======================================================
-    // ATTENDANCE
-    // ======================================================
-    public async Task<MarkAttendanceResult> MarkAttendanceAsync(
-    int sessionId,
-    int studentId,
-    string studentName)
-    {
-        using var connection = CreateConnection();
-
-        return await connection.QuerySingleAsync<MarkAttendanceResult>(
-            "SP_QRAttendanceDB_MarkAttendance",
+            query,
             new
             {
                 SessionId = sessionId,
                 StudentId = studentId,
-                StudentName = studentName
-            },
-            commandType: CommandType.StoredProcedure
+                Status = status,
+                DeviceId = deviceId
+            }
         );
     }
-
-    public async Task<IEnumerable<AttendanceRecord>> GetAttendanceBySessionAsync(int sessionId)
+    public async Task UpdateDevice(int studentId, string deviceId)
     {
-        using var connection = CreateConnection();
-
-        return await connection.QueryAsync<AttendanceRecord>(
-            "SP_QRAttendanceDB_GetAttendanceBySession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
+        var sql = "UPDATE users SET device_id = @deviceId WHERE user_id = @studentId";
+        await GetDb().ExecuteAsync(sql, new { studentId, deviceId });
     }
 
-    public async Task<IEnumerable<AttendanceRecord>> GetStudentAttendanceAsync(int studentId)
+    private static object GetDb()
     {
-        using var connection = CreateConnection();
-
-        return await connection.QueryAsync<AttendanceRecord>(
-            "SP_QRAttendanceDB_GetStudentAttendance",
-            new { StudentId = studentId },
-            commandType: CommandType.StoredProcedure
-        );
+        return _db;
     }
 
-    public async Task DeleteAttendanceAsync(int attendanceId)
+    public async Task MarkAttendance(int studentId, int sessionId, DateTime time, string status)
     {
-        using var connection = CreateConnection();
+        var sql = @"INSERT INTO attendance_records (student_id, session_id, time_recorded, status)
+                VALUES (@studentId, @sessionId, @time, @status)";
+
+        await _db.ExecuteAsync(sql, new { studentId, sessionId, time, status });
+    }
+    public async Task<User> GetStudent(int studentId)
+    {
+        var sql = "SELECT * FROM users WHERE user_id = @studentId";
+        return await _db.QueryFirstOrDefaultAsync<User>(sql, new { studentId });
+    }
+
+    public async Task<bool> HasStudentScanned(int studentId, int sessionId)
+    {
+        var sql = "SELECT COUNT(*) FROM attendance_records WHERE student_id = @studentId AND session_id = @sessionId";
+        var result = await _db.ExecuteScalarAsync<int>(sql, new { studentId, sessionId });
+        return result > 0;
+    }
+    public async Task CloseSession(int sessionId)
+    {
+        var query = @"
+UPDATE AttendanceSession
+SET IsClosed = 1
+WHERE Id = @Id
+";
+
+        using var connection = _context.CreateConnection();
 
         await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_DeleteAttendance",
-            new { AttendanceId = attendanceId },
-            commandType: CommandType.StoredProcedure
+            query,
+            new { Id = sessionId }
+        );
+    }
+
+    public async Task MarkAbsentStudents(int sessionId)
+    {
+        var query = @"
+INSERT INTO AttendanceRecords
+(
+    SessionId,
+    StudentId,
+    Status
+)
+SELECT
+    @SessionId,
+    u.Id,
+    'Absent'
+FROM Users u
+WHERE u.Role = 'Student'
+AND NOT EXISTS
+(
+    SELECT 1
+    FROM AttendanceRecords a
+    WHERE a.SessionId = @SessionId
+    AND a.StudentId = u.Id
+)
+";
+
+        using var connection = _context.CreateConnection();
+
+        await connection.ExecuteAsync(
+            query,
+            new { SessionId = sessionId }
         );
     }
 }

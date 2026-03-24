@@ -1,7 +1,6 @@
-﻿namespace QRAttendance.API.Models
+﻿namespace QRAttendance.API.Models;
+
+public class CreateAttendanceSessionDto
 {
-    public class CreateAttendanceSessionDto
-    {
-        public required string Title { get; set; }
-    }
+    public required string Title { get; set; }
 }

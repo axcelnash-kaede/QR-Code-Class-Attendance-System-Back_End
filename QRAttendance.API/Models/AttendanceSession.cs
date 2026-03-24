@@ -1,18 +1,17 @@
-﻿namespace QRAttendance.API.Models
-{
+﻿namespace QRAttendance.API.Models;
     public class AttendanceSession
-    {
-        public int Id { get; set; }
+{
+    public int Id { get; set; }
 
-        public bool IsActive { get; set; }
+    public string Subject { get; set; } = string.Empty;
 
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public int TeacherId { get; set; }
 
-        public DateTime StartTime { get; set; } 
-        public DateTime EndTime { get; set; }
+    public DateTime StartTime { get; set; }
 
-        // Navigation Property
-        public ICollection<AttendanceRecord> AttendanceRecords { get; set; }
-            = new List<AttendanceRecord>();
-    }
+    public DateTime ExpirationTime { get; set; }
+
+    public bool IsClosed { get; set; }
+
+    public DateTime CreatedAt { get; set; }
 }
