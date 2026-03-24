@@ -1,148 +1,107 @@
 ﻿using Dapper;
-using Microsoft.Data.SqlClient;
-using System.Data;
+using QRAttendance.API.Data;
 using QRAttendance.API.Models;
 
-public class AttendanceRepository : IAttendanceRepository
+namespace QRAttendance.API.Repositories
 {
-    private readonly IConfiguration _config;
-
-    public AttendanceRepository(IConfiguration config)
+    public class AttendanceRepository
     {
-        _config = config;
-    }
+        private readonly DapperContext _context;
 
-    // ======================================================
-    // DATABASE CONNECTION
-    // ======================================================
-    private IDbConnection CreateConnection()
-        => new SqlConnection(_config.GetConnectionString("DefaultConnection"));
+        public AttendanceRepository(DapperContext context)
+        {
+            _context = context;
+        }
 
-    // ======================================================
-    // SESSIONS
-    // ======================================================
-    public async Task<int> CreateSessionAsync(string title)
-    {
-        using var connection = CreateConnection();
+        // GET SESSION
+        public async Task<AttendanceSession?> GetSession(int sessionId)
+        {
+            using var connection = _context.CreateConnection();
 
-        return await connection.ExecuteScalarAsync<int>(
-            "SP_QRAttendanceDB_CreateSession",
-            new { Title = title },
-            commandType: CommandType.StoredProcedure
-        );
-    }
+            return await connection.QueryFirstOrDefaultAsync<AttendanceSession>(
+                "SELECT * FROM AttendanceSession WHERE Id = @sessionId",
+                new { sessionId });
+        }
 
-    public async Task<IEnumerable<AttendanceSession>> GetAllSessionsAsync()
-    {
-        using var connection = CreateConnection();
+        // GET EXISTING ATTENDANCE
+        public async Task<AttendanceRecord?> GetAttendance(int sessionId, int studentId)
+        {
+            using var connection = _context.CreateConnection();
 
-        return await connection.QueryAsync<AttendanceSession>(
-            "SP_QRAttendanceDB_GetAllSessions",
-            commandType: CommandType.StoredProcedure
-        );
-    }
+            return await connection.QueryFirstOrDefaultAsync<AttendanceRecord>(
+                @"SELECT * FROM AttendanceRecords
+                  WHERE SessionId = @sessionId
+                  AND StudentId = @studentId",
+                new { sessionId, studentId });
+        }
 
-    public async Task<AttendanceSession?> GetSessionByIdAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
+        // TEACHER CREATE SESSION
+        public async Task<int> CreateSession(string title, string subject, string qrCode, DateTime expirationTime, DateTime startTime, int teacherId)
+        {
+            var query = @"
+        INSERT INTO AttendanceSession
+        (Title, Subject, QrCode, ExpirationTime, StartTime, TeacherId, IsActive, CreatedAt, IsClosed)
+        VALUES
+        (@Title, @Subject, @QrCode, @ExpirationTime, @StartTime, @TeacherId, 1, GETDATE(), 0);
+        SELECT CAST(SCOPE_IDENTITY() as int);
+    ";
 
-        return await connection.QueryFirstOrDefaultAsync<AttendanceSession>(
-            "SP_QRAttendanceDB_GetSessionById",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task UpdateSessionAsync(int id, string title, bool isActive)
-    {
-        using var connection = CreateConnection();
-
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_UpdateSession",
-            new
+            using var connection = _context.CreateConnection();
+            int sessionId = await connection.ExecuteScalarAsync<int>(query, new
             {
-                SessionId = id,
                 Title = title,
-                IsActive = isActive
-            },
-            commandType: CommandType.StoredProcedure
-        );
-    }
+                Subject = subject,
+                QrCode = qrCode,
+                ExpirationTime = expirationTime,
+                StartTime = startTime,
+                TeacherId = teacherId
+            });
 
-    public async Task DeleteSessionAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
+            return sessionId;
+        }
+        
 
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_DeleteSession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
+        // INSERT ATTENDANCE
+        public async Task InsertAttendance(int sessionId, int studentId, string deviceId, string status)
+        {
+            using var connection = _context.CreateConnection();
 
-    public async Task CloseSessionAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
+            await connection.ExecuteAsync(
+                @"INSERT INTO AttendanceRecords
+                (SessionId, StudentId, DeviceId, Status, ScanTime)
+                VALUES
+                (@sessionId, @studentId, @deviceId, @status, GETDATE())",
+                new { sessionId, studentId, deviceId, status });
+        }
 
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_CloseSession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
+        // CLOSE SESSION
+        public async Task CloseSession(int sessionId)
+        {
+            using var connection = _context.CreateConnection();
 
-    // ======================================================
-    // ATTENDANCE
-    // ======================================================
-    public async Task<MarkAttendanceResult> MarkAttendanceAsync(
-    int sessionId,
-    int studentId,
-    string studentName)
-    {
-        using var connection = CreateConnection();
+            await connection.ExecuteAsync(
+                @"UPDATE AttendanceSession
+                  SET IsActive = 0
+                  WHERE Id = @sessionId",
+                new { sessionId });
+        }
 
-        return await connection.QuerySingleAsync<MarkAttendanceResult>(
-            "SP_QRAttendanceDB_MarkAttendance",
-            new
-            {
-                SessionId = sessionId,
-                StudentId = studentId,
-                StudentName = studentName
-            },
-            commandType: CommandType.StoredProcedure
-        );
-    }
+        // MARK ABSENT STUDENTS
+        public async Task MarkAbsentStudents(int sessionId)
+        {
+            using var connection = _context.CreateConnection();
 
-    public async Task<IEnumerable<AttendanceRecord>> GetAttendanceBySessionAsync(int sessionId)
-    {
-        using var connection = CreateConnection();
-
-        return await connection.QueryAsync<AttendanceRecord>(
-            "SP_QRAttendanceDB_GetAttendanceBySession",
-            new { SessionId = sessionId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task<IEnumerable<AttendanceRecord>> GetStudentAttendanceAsync(int studentId)
-    {
-        using var connection = CreateConnection();
-
-        return await connection.QueryAsync<AttendanceRecord>(
-            "SP_QRAttendanceDB_GetStudentAttendance",
-            new { StudentId = studentId },
-            commandType: CommandType.StoredProcedure
-        );
-    }
-
-    public async Task DeleteAttendanceAsync(int attendanceId)
-    {
-        using var connection = CreateConnection();
-
-        await connection.ExecuteAsync(
-            "SP_QRAttendanceDB_DeleteAttendance",
-            new { AttendanceId = attendanceId },
-            commandType: CommandType.StoredProcedure
-        );
+            await connection.ExecuteAsync(@"
+            INSERT INTO AttendanceRecords (SessionId, StudentId, Status)
+            SELECT @sessionId, u.Id, 'Absent'
+            FROM Users u
+            WHERE u.Role = 'Student'
+            AND NOT EXISTS (
+                SELECT 1 FROM AttendanceRecord ar
+                WHERE ar.SessionId = @sessionId
+                AND ar.StudentId = u.Id
+            )",
+            new { sessionId });
+        }
     }
 }

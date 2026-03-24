@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using QRAttendance.API.Data;
+using QRAttendance.API.Repositories;
+using QRAttendance.API.Services;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -55,8 +58,10 @@ builder.Services.AddSwaggerGen(options =>
 // ==============================
 // DAPPER / SERVICES
 // ==============================
+
+builder.Services.AddScoped<AttendanceRepository>();
+builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<UserRepository>();
-builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
 builder.Services.AddSingleton<DapperContext>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<DashboardRepository>();
@@ -92,6 +97,22 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy =>
+        {
+            policy
+                .WithOrigins(
+                    "https://localhost:5001", // MudBlazor dev
+                    "http://localhost:5001"
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+});
+
+
 var app = builder.Build();
 
 // ==============================
@@ -105,6 +126,7 @@ if (app.Environment.IsDevelopment())
 
 // ❌ DO NOT redirect HTTPS (breaks mobile)
 // app.UseHttpsRedirection();
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();

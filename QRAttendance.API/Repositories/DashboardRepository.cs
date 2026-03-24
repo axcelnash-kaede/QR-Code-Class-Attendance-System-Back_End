@@ -3,6 +3,8 @@ using Dapper;
 using Microsoft.Data.SqlClient;
 using QRAttendance.API.DTOs;
 
+namespace QRAttendance.API.Repositories;
+
 public class DashboardRepository
 {
     private readonly IConfiguration _config;

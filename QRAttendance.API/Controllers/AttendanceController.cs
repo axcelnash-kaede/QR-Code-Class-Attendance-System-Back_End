@@ -1,116 +1,80 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using QRAttendance.API.Models;
-using System.Security.Claims;
+using QRAttendance.API.DTOs;
+using QRAttendance.API.Services;
 
+namespace QRAttendance.API.Controllers;
+
+[Route("api/attendance")]
 [ApiController]
-[Route("api/[controller]")]
-[Authorize]
 public class AttendanceController : ControllerBase
 {
-    private readonly AttendanceService _attendanceService;
+    private readonly AttendanceService _service;
 
-    public AttendanceController(AttendanceService attendanceService)
+    public AttendanceController(AttendanceService service)
     {
-        _attendanceService = attendanceService;
+        _service = service;
     }
 
-    // ======================================================
-    // 👨‍🏫 TEACHER - CREATE SESSION
-    // ======================================================
-    [Authorize(Roles = "Teacher")]
+    // STUDENT SCAN QR
+    [HttpPost("scan")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> ScanQR(
+        int sessionId,
+        int studentId,
+        string deviceId
+    )
+    {
+        var result = await _service.ScanQR(
+            sessionId,
+            studentId,
+            deviceId
+        );
+
+        return Ok(result);
+    }
+
+    // TEACHER CREATE SESSION
+
     [HttpPost("create-session")]
-    public async Task<IActionResult> CreateSession([FromBody] CreateAttendanceSessionDto dto)
-    {
-        if (string.IsNullOrWhiteSpace(dto.Title))
-            return BadRequest("Title is required");
-
-        var sessionId = await _attendanceService.CreateSessionAsync(dto.Title);
-
-        return Ok(new { SessionId = sessionId });
-    }
-
-    // ======================================================
-    // 👨‍🏫 TEACHER - GET ALL SESSIONS
-    // ======================================================
     [Authorize(Roles = "Teacher")]
-    [HttpGet("sessions")]
-    public async Task<IActionResult> GetAllSessions()
+    public async Task<IActionResult> CreateSession(CreateAttendanceSessionDto dto)
     {
-        var sessions = await _attendanceService.GetAllSessionsAsync();
-        return Ok(sessions);
-    }
+        var teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-    // ======================================================
-    // 👨‍🎓 STUDENT - MARK ATTENDANCE
-    // ======================================================
-    [Authorize(Roles = "Student")]
-    [HttpPost("mark-attendance/{sessionId}")]
-    public async Task<IActionResult> MarkAttendance(int sessionId)
-    {
-        try
+        var newSessionId = await _service.CreateSession(dto, teacherId);
+
+        var response = new
         {
-            var studentId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var studentName = User.FindFirst(ClaimTypes.Name)?.Value ?? "Unknown";
+            SessionId = newSessionId,
+            Message = "Session Created Successfully"
+    };
 
-            await _attendanceService.MarkAttendanceAsync(
-                sessionId,
-                studentId,
-                studentName
-            );
-
-            return Ok("Attendance recorded successfully");
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ex.Message);
-        }
+        return Ok(response);
     }
 
-    // ======================================================
-    // 👨‍🏫 TEACHER - VIEW ATTENDANCE
-    // ======================================================
+    // TEACHER CLOSE SESSION
+    [HttpPost("close")]
     [Authorize(Roles = "Teacher")]
-    [HttpGet("view-attendance/{sessionId}")]
-    public async Task<IActionResult> ViewAttendance(int sessionId)
-    {
-        var records = await _attendanceService.GetAttendanceBySessionAsync(sessionId);
-        return Ok(records);
-    }
-
-    // ======================================================
-    // 👨‍🎓 STUDENT - VIEW MY ATTENDANCE
-    // ======================================================
-    [Authorize(Roles = "Student")]
-    [HttpGet("my-attendance")]
-    public async Task<IActionResult> GetMyAttendance()
-    {
-        var studentId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-
-        var records = await _attendanceService.GetStudentAttendanceAsync(studentId);
-
-        return Ok(records);
-    }
-
-    // ======================================================
-    // 👨‍🏫 TEACHER - DELETE ATTENDANCE
-    // ======================================================
-    [Authorize(Roles = "Teacher")]
-    [HttpDelete("attendance/{id}")]
-    public async Task<IActionResult> DeleteAttendance(int id)
-    {
-        await _attendanceService.DeleteAttendanceAsync(id);
-        return Ok("Attendance deleted successfully");
-    }
-
-    // ======================================================
-    // 👨‍🏫 TEACHER - CLOSE SESSION
-    // ======================================================
-    [Authorize(Roles = "Teacher")]
-    [HttpPost("close-session/{sessionId}")]
     public async Task<IActionResult> CloseSession(int sessionId)
     {
-        await _attendanceService.CloseSessionAsync(sessionId);
-        return Ok("Session closed successfully");
+        var result = await _service.CloseSession(sessionId);
+
+        return Ok(result);
+    }
+    
+    // QR CODE
+
+    [HttpGet("qrcode/{sessionId}")]
+    public async Task<IActionResult> GetQrCode(int sessionId)
+    {
+        var imageBytes = await _service.GenerateQrCodeAsync(sessionId);
+
+        if (imageBytes == null)
+            return NotFound("Session not found");
+
+        return File(imageBytes, "image/png");
     }
 }

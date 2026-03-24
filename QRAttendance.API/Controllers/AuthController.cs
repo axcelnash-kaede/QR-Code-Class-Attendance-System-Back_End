@@ -5,17 +5,21 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using QRAttendance.API.DTOs;
 using QRAttendance.API.Models;
+using QRAttendance.API.Repositories;
+using System.Threading.Tasks;
+
+namespace QRAttendance.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IConfiguration _configuration;
+private readonly IConfiguration _configuration;
     private readonly UserRepository _repo;
 
-    public AuthController(IConfiguration configuration, UserRepository repo)
+public AuthController(IConfiguration configuration, UserRepository repo)
     {
-        _configuration = configuration;
+    _configuration = configuration;
         _repo = repo;
     }
 
@@ -26,26 +30,19 @@ public class AuthController : ControllerBase
         if (await _repo.EmailExistsAsync(dto.Email))
             return BadRequest("Email already exists");
 
-        //------------------------------------------------
-        // VALIDATE 4 DIGIT STUDENT NUMBER
-        //------------------------------------------------
+        // validate 4 digits
         if (string.IsNullOrWhiteSpace(dto.StudentId) || dto.StudentId.Length != 4)
-            return BadRequest("Student number must be 4 digits.");
+            return BadRequest("Student number must be 4 digits");
 
-        //------------------------------------------------
-        // FORMAT STUDENT ID
-        //------------------------------------------------
+        // format ID
         var formattedStudentId = $"C24-01-{dto.StudentId}-MAN121";
 
-        //------------------------------------------------
-        // CREATE USER
-        //------------------------------------------------
         var user = new User
         {
-            StudentId = formattedStudentId,
+            StudentId = formattedStudentId, // ✅ FIXED
             FullName = dto.FullName,
             Email = dto.Email,
-            Password = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.PasswordHash),
             Role = "Student"
         };
 
@@ -62,52 +59,52 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginDto dto)
     {
-        var user = await _repo.GetByEmailAsync(dto.Email);
+    var user = await _repo.GetByEmailAsync(dto.Email);
 
         if (user == null)
-            return Unauthorized("Invalid email or password");
+        return Unauthorized("Invalid email or password");
 
-        if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.Password))
-            return Unauthorized("Invalid email or password");
+    if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+        return Unauthorized("Invalid email or password");
 
-        var jwtSettings = _configuration.GetSection("Jwt");
+    var jwtSettings = _configuration.GetSection("Jwt");
 
-        var jwtKey = jwtSettings["Key"]!;
-        var jwtIssuer = jwtSettings["Issuer"]!;
-        var jwtAudience = jwtSettings["Audience"]!;
-        var duration = Convert.ToDouble(jwtSettings["DurationInMinutes"]);
+    var jwtKey = jwtSettings["Key"]!;
+    var jwtIssuer = jwtSettings["Issuer"]!;
+    var jwtAudience = jwtSettings["Audience"]!;
+    var duration = Convert.ToDouble(jwtSettings["DurationInMinutes"]);
 
-        var key = Encoding.UTF8.GetBytes(jwtKey);
+    var key = Encoding.UTF8.GetBytes(jwtKey);
 
-        var expiration = DateTime.UtcNow.AddMinutes(duration);
+    var expiration = DateTime.UtcNow.AddMinutes(duration);
 
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.FullName),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim("StudentId", user.StudentId)
-        };
+    var claims = new[]
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.FullName),
+        new Claim(ClaimTypes.Role, user.Role),
+        new Claim("StudentId", user.StudentId)
+    };
 
-        var token = new JwtSecurityToken(
-            issuer: jwtIssuer,
-            audience: jwtAudience,
-            claims: claims,
-            expires: expiration,
-            signingCredentials: new SigningCredentials(
-                new SymmetricSecurityKey(key),
-                SecurityAlgorithms.HmacSha256)
-        );
+    var token = new JwtSecurityToken(
+        issuer: jwtIssuer,
+        audience: jwtAudience,
+        claims: claims,
+        expires: expiration,
+        signingCredentials: new SigningCredentials(
+            new SymmetricSecurityKey(key),
+            SecurityAlgorithms.HmacSha256)
+    );
 
-        var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+    var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
 
-        return Ok(new
-        {
-            token = tokenString,
-            expiration = expiration,
-            role = user.Role,
-            name = user.FullName,
-            studentId = user.StudentId
-        });
-    }
+    return Ok(new
+    {
+        token = tokenString,
+        expiration = expiration,
+        role = user.Role,
+        name = user.FullName,
+        studentId = user.StudentId
+    });
+}
 }

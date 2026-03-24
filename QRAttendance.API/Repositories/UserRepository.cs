@@ -1,26 +1,27 @@
-﻿using Dapper;
+﻿using System.Data;
+using Dapper;
 using Microsoft.Data.SqlClient;
-using System.Data;
+using Microsoft.EntityFrameworkCore;
 using QRAttendance.API.Models;
 
 public class UserRepository
 {
-    private readonly IConfiguration _config;
+        private readonly IConfiguration _config;
 
     public UserRepository(IConfiguration config)
-    {
-        _config = config;
-    }
+        {
+            _config = config;
+        }
 
     private IDbConnection CreateConnection()
-        => new SqlConnection(_config.GetConnectionString("DefaultConnection"));
+            => new SqlConnection(_config.GetConnectionString("DefaultConnection"));
 
     // GET USER BY EMAIL
     public async Task<User?> GetByEmailAsync(string email)
     {
         using var connection = CreateConnection();
 
-        var sql = @"SELECT Id, StudentId, FullName, Email, Password, Role
+        var sql = @"SELECT Id, StudentId, FullName, Email, PasswordHash, Role
                     FROM Users
                     WHERE Email = @Email";
 
@@ -70,7 +71,7 @@ public class UserRepository
                 @StudentId,
                 @FullName,
                 @Email,
-                @Password,
+                @PasswordHash,
                 @Role";
 
         using var connection = CreateConnection();
@@ -80,7 +81,7 @@ public class UserRepository
             user.StudentId,
             user.FullName,
             user.Email,
-            user.Password,
+            user.PasswordHash,
             user.Role
         });
     }

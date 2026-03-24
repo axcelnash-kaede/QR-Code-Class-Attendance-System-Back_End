@@ -2,6 +2,10 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using QRAttendance.API.DTOs;
+using QRAttendance.API.Repositories;
+
+namespace QRAttendance.API.Controllers;
+
 
 [ApiController]
 [Route("api/[controller]")]
