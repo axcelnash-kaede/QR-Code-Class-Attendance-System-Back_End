@@ -62,7 +62,7 @@ namespace QRAttendance.API.Repositories
         
 
         // INSERT ATTENDANCE
-        public async Task InsertAttendance(int sessionId, int studentId, string deviceId, string status)
+        public async Task InsertAttendance(int sessionId, int studentId, string status, string deviceId )
         {
             using var connection = _context.CreateConnection();
 
@@ -97,7 +97,7 @@ namespace QRAttendance.API.Repositories
             FROM Users u
             WHERE u.Role = 'Student'
             AND NOT EXISTS (
-                SELECT 1 FROM AttendanceRecord ar
+                SELECT 1 FROM AttendanceRecords ar
                 WHERE ar.SessionId = @sessionId
                 AND ar.StudentId = u.Id
             )",
