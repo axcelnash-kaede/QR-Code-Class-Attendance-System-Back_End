@@ -21,16 +21,14 @@ public class AttendanceController : ControllerBase
     // STUDENT SCAN QR
     [HttpPost("scan")]
     [Authorize(Roles = "Student")]
-    public async Task<IActionResult> ScanQR(
-        int sessionId,
-        int studentId,
-        string deviceId
-    )
+    public async Task<IActionResult> ScanQR(ScanQrDto dto)
     {
+        int studentId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
         var result = await _service.ScanQR(
-            sessionId,
+            dto.QrContent,
             studentId,
-            deviceId
+            dto.DeviceId
         );
 
         return Ok(result);
@@ -44,19 +42,21 @@ public class AttendanceController : ControllerBase
     {
         var teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-        var newSessionId = await _service.CreateSession(dto, teacherId);
+        var result = await _service.CreateSession(dto, teacherId);
 
         var response = new
         {
-            SessionId = newSessionId,
+            SessionId = result.SessionId,
+            QrCode = result.QrCode,
             Message = "Session Created Successfully"
-    };
+        };
 
         return Ok(response);
-    }
 
-    // TEACHER CLOSE SESSION
-    [HttpPost("close")]
+      }
+
+        // TEACHER CLOSE SESSION
+        [HttpPost("close")]
     [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> CloseSession(int sessionId)
     {
@@ -64,17 +64,18 @@ public class AttendanceController : ControllerBase
 
         return Ok(result);
     }
-    
+
     // QR CODE
 
-    [HttpGet("qrcode/{sessionId}")]
+    [HttpGet("qr/{sessionId}")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> GetQrCode(int sessionId)
     {
-        var imageBytes = await _service.GenerateQrCodeAsync(sessionId);
+        var qr = await _service.GetQRCode(sessionId);
 
-        if (imageBytes == null)
+        if (qr == null)
             return NotFound("Session not found");
 
-        return File(imageBytes, "image/png");
-    }
+        return Ok(qr);
+      }
 }

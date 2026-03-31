@@ -11,7 +11,9 @@ public class AttendanceSession
     public DateTime GraceTime { get; set; }   
     public DateTime ExpirationTime { get; set; }
 
-    public string? QrCode { get; set; }        
+    public string? QrCode { get; set; }      
+    
+    public string? QrToken { get; set; }
     public bool IsClosed { get; set; } 
     public DateTime CreatedAt { get; set; } 
 }

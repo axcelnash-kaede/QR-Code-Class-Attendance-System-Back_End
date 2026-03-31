@@ -3,7 +3,7 @@
     public class CreateAttendanceSessionDto
     {
         public string Title { get; set; } = string.Empty;
-        public string Subject { get; set; } = string.Empty;
+        public int SubjectId { get; set; }
         public int DurationMinutes { get; set; } // for automatic expiration
     }
 }
