@@ -1,8 +1,8 @@
-﻿namespace QRAttendance.API.DTOs;
-
-public class ScanQrDto
+﻿namespace QRAttendance.API.DTOs
 {
-    public string QrContent { get; set; } = string.Empty;
-
-    public string DeviceId { get; set; } = string.Empty;
+    public class ScanQrDto
+    {
+        public string QrContent { get; set; } = string.Empty;
+        public string? DeviceId { get; set; }
+    }
 }

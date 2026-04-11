@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using QRAttendance.API.Data;
@@ -13,8 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ==============================
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(5041); // HTTP (mobile-friendly)
-    options.ListenAnyIP(7041, listenOptions =>
+    options.Listen(IPAddress.Any, 5041); // HTTP (mobile-friendly)
+    options.ListenLocalhost(7041, listenOptions =>
     {
         listenOptions.UseHttps(); // HTTPS (browser/dev)
     });
