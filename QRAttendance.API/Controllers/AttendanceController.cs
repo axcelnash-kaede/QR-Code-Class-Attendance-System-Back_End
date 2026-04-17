@@ -20,7 +20,7 @@ namespace QRAttendance.API.Controllers
         // STUDENT SCAN QR
         [HttpPost("scan")]
         [Authorize(Roles = "Student")]
-        public async Task<IActionResult> ScanQR(ScanQrDto dto)
+        public async Task<IActionResult> ScanQR([FromBody] ScanQrDto dto)
         {
             int studentId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             string? userAgent = Request.Headers.UserAgent.ToString();
@@ -32,16 +32,34 @@ namespace QRAttendance.API.Controllers
                 userAgent
             );
 
-            return Ok(new
+            if (result.Success)
+                return Ok(result);
+
+            return result.Code switch
             {
-                message = result
-            });
+                "INVALID_QR" => BadRequest(result),
+                "INVALID_FORMAT" => BadRequest(result),
+                "INVALID_SESSION_ID" => BadRequest(result),
+                "INVALID_TOKEN" => BadRequest(result),
+                "SESSION_NOT_FOUND" => NotFound(result),
+                "SESSION_CLOSED" => BadRequest(result),
+                "SESSION_INACTIVE" => BadRequest(result),
+                "SESSION_EXPIRED" => BadRequest(result),
+                "SUBJECT_MISSING" => BadRequest(result),
+                "NOT_ENROLLED" => Forbid(),
+                "STUDENT_NOT_FOUND" => NotFound(result),
+                "SECTION_MISSING" => BadRequest(result),
+                "WRONG_SECTION" => BadRequest(result),
+                "SUSPICIOUS_DEVICE" => StatusCode(StatusCodes.Status403Forbidden, result),
+                "DUPLICATE" => Conflict(result),
+                _ => BadRequest(result)
+            };
         }
 
         // TEACHER CREATE SESSION
         [HttpPost("create-session")]
         [Authorize(Roles = "Teacher")]
-        public async Task<IActionResult> CreateSession(CreateAttendanceSessionDto dto)
+        public async Task<IActionResult> CreateSession([FromBody] CreateAttendanceSessionDto dto)
         {
             int teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
@@ -49,9 +67,9 @@ namespace QRAttendance.API.Controllers
 
             return Ok(new
             {
-                SessionId = result.SessionId,
-                QrCode = result.QrCode,
-                Message = "Session Created Successfully"
+                sessionId = result.SessionId,
+                qrCode = result.QrCode,
+                message = "Session created successfully"
             });
         }
 
@@ -64,10 +82,17 @@ namespace QRAttendance.API.Controllers
 
             var result = await _service.CloseSession(sessionId, teacherId);
 
+            if (!result.Success)
+                return BadRequest(new
+                {
+                    success = false,
+                    message = result.Message
+                });
+
             return Ok(new
             {
-                message = result
-
+                success = true,
+                message = result.Message
             });
         }
 
@@ -83,7 +108,10 @@ namespace QRAttendance.API.Controllers
             if (qr == null)
                 return NotFound("Session not found or you are not allowed to access it.");
 
-            return Ok(qr);
+            return Ok(new
+            {
+                qrCode = qr
+            });
         }
 
         // TEACHER VIEW ALL DEVICE LOGS

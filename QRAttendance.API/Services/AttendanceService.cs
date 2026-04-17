@@ -16,12 +16,12 @@ namespace QRAttendance.API.Services
         }
 
         // STUDENT SCAN QR
-        public async Task<string> ScanQR(string qrContent, int studentId, string? deviceId, string? userAgent)
+        public async Task<ScanResultDto> ScanQR(string qrContent, int studentId, string? deviceId, string? userAgent)
         {
             if (string.IsNullOrWhiteSpace(qrContent))
             {
                 await _repo.LogDeviceScanAsync(studentId, null, deviceId, "Blocked", "QR content is required.");
-                return "QR content is required.";
+                return ScanResultDto.Fail("QR content is required.", "INVALID_QR");
             }
 
             // BETTER DEVICE ID GENERATION
@@ -35,13 +35,13 @@ namespace QRAttendance.API.Services
             if (parts.Length != 2)
             {
                 await _repo.LogDeviceScanAsync(studentId, null, deviceId, "Blocked", "Invalid QR format.");
-                return "Invalid QR format.";
+                return ScanResultDto.Fail("Invalid QR format.", "INVALID_FORMAT");
             }
 
             if (!int.TryParse(parts[0], out int sessionId))
             {
                 await _repo.LogDeviceScanAsync(studentId, null, deviceId, "Blocked", "Invalid QR session ID.");
-                return "Invalid session ID.";
+                return ScanResultDto.Fail("Invalid session ID.", "INVALID_SESSION_ID");
             }
 
             string qrToken = parts[1];
@@ -49,7 +49,7 @@ namespace QRAttendance.API.Services
             if (string.IsNullOrWhiteSpace(qrToken))
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Invalid QR token.");
-                return "Invalid QR token.";
+                return ScanResultDto.Fail("Invalid QR token.", "INVALID_TOKEN");
             }
 
             var session = await _repo.GetSession(sessionId);
@@ -57,19 +57,19 @@ namespace QRAttendance.API.Services
             if (session == null)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Session not found.");
-                return "Session not found";
+                return ScanResultDto.Fail("Session not found.", "SESSION_NOT_FOUND");
             }
 
             if (session.IsClosed == true)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Session is already closed.");
-                return "Session is already closed";
+                return ScanResultDto.Fail("Session is already closed.", "SESSION_CLOSED");
             }
 
             if (!session.IsActive)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Session is not active.");
-                return "Session is not active";
+                return ScanResultDto.Fail("Session is not active.", "SESSION_INACTIVE");
             }
 
             var now = DateTime.Now;
@@ -77,33 +77,46 @@ namespace QRAttendance.API.Services
             if (now > session.ExpirationTime)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Session has expired.");
-                return "Session has expired";
+                return ScanResultDto.Fail("QR code has expired.", "SESSION_EXPIRED");
             }
 
             if (session.QrToken != qrToken)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Invalid QR token.");
-                return "Invalid QR";
+                return ScanResultDto.Fail("Invalid QR token.", "INVALID_TOKEN");
             }
 
             if (session.SubjectId == null)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Session subject is missing.");
-                return "Session subject missing";
-            }
-
-            bool isEnrolled = await _repo.IsStudentEnrolledAsync(studentId, session.SubjectId.Value);
-            if (!isEnrolled)
-            {
-                await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Student is not enrolled.");
-                return "Not enrolled";
+                return ScanResultDto.Fail("Session subject missing.", "SUBJECT_MISSING");
             }
 
             var student = await _userRepo.GetByIdAsync(studentId);
             if (student == null)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Student not found.");
-                return "Student not found";
+                return ScanResultDto.Fail("Student not found.", "STUDENT_NOT_FOUND");
+            }
+
+            // SECTION VALIDATION
+            if (student.SectionId == null || session.SectionId == null)
+            {
+                await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Section data missing.");
+                return ScanResultDto.Fail("Section data missing.", "SECTION_MISSING");
+            }
+
+            if (student.SectionId != session.SectionId)
+            {
+                await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Student belongs to a different section.");
+                return ScanResultDto.Fail("You are not allowed to scan this QR for another section.", "WRONG_SECTION");
+            }
+
+            bool isEnrolled = await _repo.IsStudentEnrolledAsync(studentId, session.SubjectId.Value);
+            if (!isEnrolled)
+            {
+                await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Student is not enrolled.");
+                return ScanResultDto.Fail("Student is not enrolled in this subject.", "NOT_ENROLLED");
             }
 
             // BLOCK MULTIPLE DEVICES
@@ -117,7 +130,10 @@ namespace QRAttendance.API.Services
                     $"Different device used. Registered device: {student.DeviceId}, attempted device: {deviceId}"
                 );
 
-                return "Suspicious scan detected: this account is already linked to another device.";
+                return ScanResultDto.Fail(
+                    "Suspicious scan detected: this account is already linked to another device.",
+                    "SUSPICIOUS_DEVICE"
+                );
             }
 
             // AUTO-BIND FIRST DEVICE
@@ -130,7 +146,7 @@ namespace QRAttendance.API.Services
             if (existing != null)
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Attendance already recorded.");
-                return "Already recorded";
+                return ScanResultDto.Fail("Attendance already recorded.", "DUPLICATE");
             }
 
             string status = "Present";
@@ -142,7 +158,7 @@ namespace QRAttendance.API.Services
 
             await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Success", $"Attendance recorded: {status}");
 
-            return $"Attendance recorded successfully: {status}";
+            return ScanResultDto.Ok($"Attendance recorded successfully: {status}", status);
         }
 
         // TEACHER CREATE SESSION
@@ -152,11 +168,10 @@ namespace QRAttendance.API.Services
             if (!subjectOwned)
                 throw new Exception("You are not allowed to create a session for this subject.");
 
-            // AUTO COMPUTE TIME VALUES
             var now = DateTime.Now;
 
             int graceMinutes = dto.GraceMinutes ?? 5;
-            int expirationMinutes = dto.ExpirationMinutes ?? 20;
+            int expirationMinutes = dto.ExpirationMinutes ?? 30;
 
             if (graceMinutes <= 0)
                 graceMinutes = 5;
@@ -168,15 +183,18 @@ namespace QRAttendance.API.Services
             DateTime? graceTime = now.AddMinutes(graceMinutes);
             DateTime expirationTime = now.AddMinutes(expirationMinutes);
 
+            string qrToken = Guid.NewGuid().ToString();
+
             int sessionId = await _repo.CreateSession(
                 dto.Title,
                 dto.SubjectId,
+                dto.SectionId,
                 "",
                 expirationTime,
                 startTime,
                 graceTime,
                 teacherId,
-                Guid.NewGuid().ToString()
+                qrToken
             );
 
             var session = await _repo.GetSession(sessionId);
@@ -196,16 +214,16 @@ namespace QRAttendance.API.Services
         }
 
         // TEACHER CLOSE SESSION
-        public async Task<string> CloseSession(int sessionId, int teacherId)
+        public async Task<OperationResultDto> CloseSession(int sessionId, int teacherId)
         {
             bool success = await _repo.CloseSession(sessionId, teacherId);
 
             if (!success)
-                return "Session not found or you are not allowed to close it.";
+                return OperationResultDto.Fail("Session not found or you are not allowed to close it.");
 
             await _repo.MarkAbsentStudents(sessionId);
 
-            return "Session closed successfully";
+            return OperationResultDto.Ok("Session closed successfully");
         }
 
         // TEACHER GET QR CODE
@@ -213,6 +231,7 @@ namespace QRAttendance.API.Services
         {
             return await _repo.GetQRCode(sessionId, teacherId);
         }
+
         public async Task<IEnumerable<dynamic>> GetDeviceLogs(string? status = null)
         {
             return await _repo.GetDeviceLogsAsync(status);
@@ -223,5 +242,4 @@ namespace QRAttendance.API.Services
             return await _repo.GetSuspiciousLogsAsync();
         }
     }
-
 }

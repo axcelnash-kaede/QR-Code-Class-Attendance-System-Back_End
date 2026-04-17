@@ -14,5 +14,6 @@
         public bool IsActive { get; set; }
         public string? QrToken { get; set; }
         public int? SubjectId { get; set; }
+        public int? SectionId { get; set; }
     }
 }

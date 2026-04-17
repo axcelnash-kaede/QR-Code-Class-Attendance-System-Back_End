@@ -64,8 +64,9 @@ namespace QRAttendance.API.Repositories
         }
 
         public async Task<int> CreateSession(
-            string title,
+            string? title,
             int subjectId,
+            int sectionId,
             string qrCode,
             DateTime expirationTime,
             DateTime startTime,
@@ -78,6 +79,7 @@ namespace QRAttendance.API.Repositories
                 (
                     Title,
                     SubjectId,
+                    SectionId,
                     QrCode,
                     ExpirationTime,
                     StartTime,
@@ -92,6 +94,7 @@ namespace QRAttendance.API.Repositories
                 (
                     @Title,
                     @SubjectId,
+                    @SectionId,
                     @QrCode,
                     @ExpirationTime,
                     @StartTime,
@@ -112,6 +115,7 @@ namespace QRAttendance.API.Repositories
             {
                 Title = title,
                 SubjectId = subjectId,
+                SectionId = sectionId,
                 QrCode = qrCode,
                 ExpirationTime = expirationTime,
                 StartTime = startTime,
@@ -278,7 +282,7 @@ namespace QRAttendance.API.Repositories
                 StudentId = studentId,
                 SessionId = sessionId,
                 DeviceId = deviceId,
-                Status = status,
+                Status = status,    
                 Message = message
             });
         }

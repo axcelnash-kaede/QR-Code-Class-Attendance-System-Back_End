@@ -2,10 +2,9 @@
 {
     public class CreateAttendanceSessionDto
     {
-        public string Title { get; set; } = string.Empty;
+        public string? Title { get; set; }
         public int SubjectId { get; set; }
-
-        // Optional custom values
+        public int SectionId { get; set; }
         public int? GraceMinutes { get; set; }
         public int? ExpirationMinutes { get; set; }
     }

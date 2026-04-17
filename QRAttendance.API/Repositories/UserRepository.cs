@@ -32,7 +32,7 @@ namespace QRAttendance.API.Repositories
         {
             using var connection = CreateConnection();
 
-            var sql = @"SELECT Id, StudentId, FullName, Email, PasswordHash, Role, DeviceId, CreatedAt
+            var sql = @"SELECT Id, StudentId, SectionId, FullName, Email, PasswordHash, Role, DeviceId, CreatedAt
                         FROM dbo.Users
                         WHERE Id = @Id";
 
@@ -68,17 +68,17 @@ namespace QRAttendance.API.Repositories
             using var connection = CreateConnection();
 
             await connection.ExecuteAsync(
-                "dbo.SP_QRAttendanceDB_RegisterUser",
-                new
-                {
-                    user.StudentId,
-                    user.FullName,
-                    user.Email,
-                    user.PasswordHash,
-                    user.Role
-                },
-                commandType: CommandType.StoredProcedure
-            );
+    "dbo.SP_QRAttendanceDB_RegisterUser",
+    new
+    {
+        user.StudentId,
+        user.FullName,
+        user.Email,
+        user.PasswordHash,
+        user.Role
+    },
+    commandType: CommandType.StoredProcedure
+);
         }
 
         public async Task UpdateStudentDeviceAsync(int userId, string deviceId)
