@@ -6,7 +6,6 @@ using QRAttendance.API.Data;
 using QRAttendance.API.Repositories;
 using QRAttendance.API.Services;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 // ==============================
@@ -14,10 +13,10 @@ var builder = WebApplication.CreateBuilder(args);
 // ==============================
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Listen(IPAddress.Any, 5041); // HTTP (mobile-friendly)
+    options.Listen(IPAddress.Any, 5041); // HTTP
     options.ListenLocalhost(7041, listenOptions =>
     {
-        listenOptions.UseHttps(); // HTTPS (browser/dev)
+        listenOptions.UseHttps(); // HTTPS
     });
 });
 
@@ -51,7 +50,7 @@ builder.Services.AddSwaggerGen(options =>
                     Id = "Bearer"
                 }
             },
-            new string[] {}
+            Array.Empty<string>()
         }
     });
 });
@@ -59,14 +58,11 @@ builder.Services.AddSwaggerGen(options =>
 // ==============================
 // DAPPER / SERVICES
 // ==============================
-
 builder.Services.AddScoped<AttendanceRepository>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddSingleton<DapperContext>();
-builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<DashboardRepository>();
-
 
 // ==============================
 // JWT AUTH CONFIG
@@ -84,7 +80,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // IMPORTANT for HTTP
+    options.RequireHttpsMetadata = false;
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -98,6 +94,9 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// ==============================
+// CORS
+// ==============================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend",
@@ -105,14 +104,13 @@ builder.Services.AddCors(options =>
         {
             policy
                 .WithOrigins(
-                    "https://localhost:5001", // MudBlazor dev
-                    "http://localhost:5001"
+                    "http://localhost:5286",
+                    "https://localhost:7058"
                 )
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         });
 });
-
 
 var app = builder.Build();
 
@@ -125,8 +123,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ❌ DO NOT redirect HTTPS (breaks mobile)
-// app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
