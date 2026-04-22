@@ -114,6 +114,18 @@ namespace QRAttendance.API.Controllers
             });
         }
 
+        // TEACHER GET SECTIONS WITH SUBJECTS
+        [HttpGet("teacher-sections-subjects")]
+        [Authorize(Roles = "Teacher")]
+        public async Task<IActionResult> GetTeacherSectionSubjects()
+        {
+            int teacherId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+            var result = await _service.GetTeacherSectionSubjectsAsync(teacherId);
+
+            return Ok(result);
+        }
+
         // TEACHER VIEW ALL DEVICE LOGS
         [HttpGet("device-logs")]
         [Authorize(Roles = "Teacher")]

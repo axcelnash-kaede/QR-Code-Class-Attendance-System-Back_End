@@ -9,14 +9,14 @@ using QRAttendance.API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // ==============================
-// KESTREL (ENABLE HTTP FOR MOBILE)
+// KESTREL (ENABLE HTTP FOR MOBILE / LAN)
 // ==============================
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Listen(IPAddress.Any, 5041); // HTTP
+    options.Listen(IPAddress.Any, 5041); // HTTP for LAN/devices
     options.ListenLocalhost(7041, listenOptions =>
     {
-        listenOptions.UseHttps(); // HTTPS
+        listenOptions.UseHttps(); // HTTPS only on local machine
     });
 });
 
@@ -95,21 +95,17 @@ builder.Services.AddAuthentication(options =>
 });
 
 // ==============================
-// CORS
+// CORS (TEMP: OPEN FOR TESTING)
 // ==============================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend",
-        policy =>
-        {
-            policy
-                .WithOrigins(
-                    "http://localhost:5286",
-                    "https://localhost:7058"
-                )
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        });
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
@@ -117,11 +113,8 @@ var app = builder.Build();
 // ==============================
 // MIDDLEWARE
 // ==============================
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseCors("AllowFrontend");
 

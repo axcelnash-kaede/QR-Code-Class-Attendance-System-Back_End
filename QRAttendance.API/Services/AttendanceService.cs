@@ -1,4 +1,5 @@
-﻿using QRAttendance.API.DTOs;
+﻿using Microsoft.Data.SqlClient;
+using QRAttendance.API.DTOs;
 using QRAttendance.API.Helpers;
 using QRAttendance.API.Repositories;
 
@@ -18,6 +19,8 @@ namespace QRAttendance.API.Services
         // STUDENT SCAN QR
         public async Task<ScanResultDto> ScanQR(string qrContent, int studentId, string? deviceId, string? userAgent)
         {
+            deviceId = NormalizeDeviceId(deviceId);
+
             if (string.IsNullOrWhiteSpace(qrContent))
             {
                 await _repo.LogDeviceScanAsync(studentId, null, deviceId, "Blocked", "QR content is required.");
@@ -27,7 +30,7 @@ namespace QRAttendance.API.Services
             // BETTER DEVICE ID GENERATION
             if (string.IsNullOrWhiteSpace(deviceId))
             {
-                deviceId = DeviceIdHelper.GenerateStableDeviceId(studentId, userAgent);
+                deviceId = NormalizeDeviceId(DeviceIdHelper.GenerateStableDeviceId(studentId, userAgent));
             }
 
             var parts = qrContent.Split('|');
@@ -44,7 +47,7 @@ namespace QRAttendance.API.Services
                 return ScanResultDto.Fail("Invalid session ID.", "INVALID_SESSION_ID");
             }
 
-            string qrToken = parts[1];
+            string qrToken = parts[1]?.Trim() ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(qrToken))
             {
@@ -80,7 +83,7 @@ namespace QRAttendance.API.Services
                 return ScanResultDto.Fail("QR code has expired.", "SESSION_EXPIRED");
             }
 
-            if (session.QrToken != qrToken)
+            if (!string.Equals(session.QrToken, qrToken, StringComparison.Ordinal))
             {
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Invalid QR token.");
                 return ScanResultDto.Fail("Invalid QR token.", "INVALID_TOKEN");
@@ -98,6 +101,8 @@ namespace QRAttendance.API.Services
                 await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Student not found.");
                 return ScanResultDto.Fail("Student not found.", "STUDENT_NOT_FOUND");
             }
+
+            string? registeredDeviceId = NormalizeDeviceId(student.DeviceId);
 
             // SECTION VALIDATION
             if (student.SectionId == null || session.SectionId == null)
@@ -120,14 +125,15 @@ namespace QRAttendance.API.Services
             }
 
             // BLOCK MULTIPLE DEVICES
-            if (!string.IsNullOrWhiteSpace(student.DeviceId) && student.DeviceId != deviceId)
+            if (!string.IsNullOrWhiteSpace(registeredDeviceId) &&
+                !string.Equals(registeredDeviceId, deviceId, StringComparison.Ordinal))
             {
                 await _repo.LogDeviceScanAsync(
                     studentId,
                     sessionId,
                     deviceId,
                     "Suspicious",
-                    $"Different device used. Registered device: {student.DeviceId}, attempted device: {deviceId}"
+                    $"Different device used. Registered device: {registeredDeviceId}, attempted device: {deviceId}"
                 );
 
                 return ScanResultDto.Fail(
@@ -137,7 +143,7 @@ namespace QRAttendance.API.Services
             }
 
             // AUTO-BIND FIRST DEVICE
-            if (string.IsNullOrWhiteSpace(student.DeviceId))
+            if (string.IsNullOrWhiteSpace(registeredDeviceId) && !string.IsNullOrWhiteSpace(deviceId))
             {
                 await _userRepo.UpdateStudentDeviceAsync(studentId, deviceId);
             }
@@ -154,7 +160,15 @@ namespace QRAttendance.API.Services
             if (session.GraceTime != null && now > session.GraceTime.Value)
                 status = "Late";
 
-            await _repo.InsertAttendance(sessionId, studentId, status, deviceId);
+            try
+            {
+                await _repo.InsertAttendance(sessionId, studentId, status, deviceId);
+            }
+            catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+            {
+                await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Blocked", "Attendance already recorded.");
+                return ScanResultDto.Fail("Attendance already recorded.", "DUPLICATE");
+            }
 
             await _repo.LogDeviceScanAsync(studentId, sessionId, deviceId, "Success", $"Attendance recorded: {status}");
 
@@ -219,11 +233,17 @@ namespace QRAttendance.API.Services
             bool success = await _repo.CloseSession(sessionId, teacherId);
 
             if (!success)
-                return OperationResultDto.Fail("Session not found or you are not allowed to close it.");
+                return OperationResultDto.Fail("Session already closed, not found, or you are not allowed to close it.");
 
             await _repo.MarkAbsentStudents(sessionId);
 
-            return OperationResultDto.Ok("Session closed successfully");
+            return OperationResultDto.Ok("Session closed successfully.");
+        }
+
+        // TEACHER SECTION/SUBJECT
+        public async Task<IEnumerable<TeacherSectionSubjectsDto>> GetTeacherSectionSubjectsAsync(int teacherId)
+        {
+            return await _repo.GetTeacherSectionSubjectsAsync(teacherId);
         }
 
         // TEACHER GET QR CODE
@@ -240,6 +260,14 @@ namespace QRAttendance.API.Services
         public async Task<IEnumerable<dynamic>> GetSuspiciousLogs()
         {
             return await _repo.GetSuspiciousLogsAsync();
+        }
+
+        private static string? NormalizeDeviceId(string? deviceId)
+        {
+            if (string.IsNullOrWhiteSpace(deviceId))
+                return null;
+
+            return deviceId.Trim().ToLowerInvariant();
         }
     }
 }

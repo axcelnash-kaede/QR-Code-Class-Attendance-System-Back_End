@@ -1,7 +1,9 @@
-﻿using Dapper;
+﻿using System.Data;
+using Dapper;
+using System.Linq;
 using QRAttendance.API.Data;
+using QRAttendance.API.DTOs;
 using QRAttendance.API.Models;
-using System.Data;
 
 namespace QRAttendance.API.Repositories
 {
@@ -163,7 +165,8 @@ namespace QRAttendance.API.Repositories
                   SET IsActive = 0,
                       IsClosed = 1
                   WHERE Id = @sessionId
-                    AND TeacherId = @teacherId",
+                    AND TeacherId = @teacherId
+                    AND IsClosed = 0",
                 new { sessionId, teacherId });
 
             return affectedRows > 0;
@@ -253,6 +256,59 @@ namespace QRAttendance.API.Repositories
             return await connection.QueryAsync(sql);
         }
 
+        public async Task<IEnumerable<TeacherSectionSubjectsDto>> GetTeacherSectionSubjectsAsync(int teacherId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT DISTINCT
+            sec.Id AS SectionId,
+            sec.Name AS SectionName,
+            sub.Id AS SubjectId,
+            sub.Name AS SubjectName
+        FROM dbo.Users u
+        INNER JOIN dbo.Sections sec
+            ON u.SectionId = sec.Id
+        INNER JOIN dbo.Enrollments e
+            ON u.Id = e.StudentId
+        INNER JOIN dbo.Subjects sub
+            ON e.SubjectId = sub.Id
+        WHERE u.Role = 'Student'
+          AND u.SectionId IS NOT NULL
+          AND sub.TeacherId = @TeacherId
+        ORDER BY sec.Name, sub.Name;
+    ";
+
+            var rows = await connection.QueryAsync<SectionSubjectRow>(sql, new { TeacherId = teacherId });
+
+            var grouped = rows
+                .GroupBy(x => new { x.SectionId, x.SectionName })
+                .Select(g => new TeacherSectionSubjectsDto
+                {
+                    SectionId = g.Key.SectionId,
+                    SectionName = g.Key.SectionName,
+                    Subjects = g
+                        .Select(x => new TeacherSectionSubjectItemDto
+                        {
+                            SubjectId = x.SubjectId,
+                            SubjectName = x.SubjectName
+                        })
+                        .DistinctBy(x => x.SubjectId)
+                        .ToList()
+                })
+                .ToList();
+
+            return grouped;
+        }
+
+        private class SectionSubjectRow
+        {
+            public int SectionId { get; set; }
+            public string SectionName { get; set; } = string.Empty;
+            public int SubjectId { get; set; }
+            public string SubjectName { get; set; } = string.Empty;
+        }
+
         // NEW: log every device scan attempt
         public async Task LogDeviceScanAsync(int studentId, int? sessionId, string? deviceId, string status, string? message)
         {
@@ -282,7 +338,7 @@ namespace QRAttendance.API.Repositories
                 StudentId = studentId,
                 SessionId = sessionId,
                 DeviceId = deviceId,
-                Status = status,    
+                Status = status,
                 Message = message
             });
         }

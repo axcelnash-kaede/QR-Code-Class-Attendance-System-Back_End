@@ -43,7 +43,8 @@ namespace QRAttendance.API.Controllers
                 FullName = dto.FullName,
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                Role = "Student"
+                Role = "Student",
+                SectionId = dto.SectionId
             };
 
             await _repo.RegisterAsync(user);
