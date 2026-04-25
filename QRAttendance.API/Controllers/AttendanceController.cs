@@ -140,6 +140,16 @@ namespace QRAttendance.API.Controllers
             });
         }
 
+        // GET ATTENDANCE BY SESSION
+        [HttpGet("session-records/{sessionId}")]
+        [Authorize(Roles = "Teacher")]
+        public async Task<IActionResult> GetSessionRecords(int sessionId)
+        {
+            var result = await _service.GetAttendanceBySession(sessionId);
+
+            return Ok(result);
+        }
+
         // TEACHER VIEW ONLY SUSPICIOUS LOGS
         [HttpGet("suspicious-logs")]
         [Authorize(Roles = "Teacher")]

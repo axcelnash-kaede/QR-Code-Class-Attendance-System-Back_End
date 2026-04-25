@@ -210,6 +210,24 @@ namespace QRAttendance.API.Repositories
                 new { sessionId, teacherId });
         }
 
+        public async Task<IEnumerable<dynamic>> GetAttendanceBySession(int sessionId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT 
+            u.StudentId,
+            u.FullName,
+            a.Status,
+            a.ScanTime
+        FROM dbo.AttendanceRecords a
+        INNER JOIN dbo.Users u ON a.StudentId = u.Id
+        WHERE a.SessionId = @sessionId
+        ORDER BY a.ScanTime ASC
+    ";
+
+            return await connection.QueryAsync(sql, new { sessionId });
+        }
         public async Task<IEnumerable<dynamic>> GetDeviceLogsAsync(string? status = null)
         {
             using var connection = _context.CreateConnection();

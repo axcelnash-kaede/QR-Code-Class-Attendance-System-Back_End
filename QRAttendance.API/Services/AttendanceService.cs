@@ -75,7 +75,7 @@ namespace QRAttendance.API.Services
                 return ScanResultDto.Fail("Session is not active.", "SESSION_INACTIVE");
             }
 
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
 
             if (now > session.ExpirationTime)
             {
@@ -223,8 +223,22 @@ namespace QRAttendance.API.Services
             return new CreateSessionResponseDto
             {
                 SessionId = sessionId,
-                QrCode = qrCode
+                QrCode = qrCode,
+                QrToken = session.QrToken
             };
+        }
+
+        public async Task<IEnumerable<object>> GetAttendanceBySession(int sessionId)
+        {
+            var records = await _repo.GetAttendanceBySession(sessionId);
+
+            return records.Select(r => new
+            {
+                StudentId = r.StudentId,
+                Name = r.FullName,
+                Status = r.Status,
+                Time = r.ScanTime.ToString("hh:mm tt")
+            });
         }
 
         // TEACHER CLOSE SESSION
