@@ -1,22 +1,22 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using QRAttendance.API.Data;
 using QRAttendance.API.Repositories;
 using QRAttendance.API.Services;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 // ==============================
-// KESTREL (ENABLE HTTP FOR MOBILE)
+// KESTREL (ENABLE HTTP FOR MOBILE / LAN)
 // ==============================
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(5041); // HTTP (mobile-friendly)
-    options.ListenAnyIP(7041, listenOptions =>
+    options.Listen(IPAddress.Any, 5041); // HTTP for LAN/devices
+    options.ListenLocalhost(7041, listenOptions =>
     {
-        listenOptions.UseHttps(); // HTTPS (browser/dev)
+        listenOptions.UseHttps(); // HTTPS only on local machine
     });
 });
 
@@ -50,7 +50,7 @@ builder.Services.AddSwaggerGen(options =>
                     Id = "Bearer"
                 }
             },
-            new string[] {}
+            Array.Empty<string>()
         }
     });
 });
@@ -58,14 +58,11 @@ builder.Services.AddSwaggerGen(options =>
 // ==============================
 // DAPPER / SERVICES
 // ==============================
-
 builder.Services.AddScoped<AttendanceRepository>();
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddSingleton<DapperContext>();
-builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<DashboardRepository>();
-
 
 // ==============================
 // JWT AUTH CONFIG
@@ -83,7 +80,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // IMPORTANT for HTTP
+    options.RequireHttpsMetadata = false;
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -97,35 +94,28 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// ==============================
+// CORS (TEMP: OPEN FOR TESTING)
+// ==============================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend",
-        policy =>
-        {
-            policy
-                .WithOrigins(
-                    "https://localhost:5001", // MudBlazor dev
-                    "http://localhost:5001"
-                )
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        });
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
-
 
 var app = builder.Build();
 
 // ==============================
 // MIDDLEWARE
 // ==============================
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
-// ❌ DO NOT redirect HTTPS (breaks mobile)
-// app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();

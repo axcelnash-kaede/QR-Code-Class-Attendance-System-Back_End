@@ -1,5 +1,8 @@
-﻿using Dapper;
+﻿using System.Data;
+using Dapper;
+using System.Linq;
 using QRAttendance.API.Data;
+using QRAttendance.API.DTOs;
 using QRAttendance.API.Models;
 
 namespace QRAttendance.API.Repositories
@@ -13,95 +16,349 @@ namespace QRAttendance.API.Repositories
             _context = context;
         }
 
-        // GET SESSION
         public async Task<AttendanceSession?> GetSession(int sessionId)
         {
             using var connection = _context.CreateConnection();
 
             return await connection.QueryFirstOrDefaultAsync<AttendanceSession>(
-                "SELECT * FROM AttendanceSession WHERE Id = @sessionId",
+                @"SELECT * 
+                  FROM dbo.AttendanceSession 
+                  WHERE Id = @sessionId",
                 new { sessionId });
         }
 
-        // GET EXISTING ATTENDANCE
         public async Task<AttendanceRecord?> GetAttendance(int sessionId, int studentId)
         {
             using var connection = _context.CreateConnection();
 
             return await connection.QueryFirstOrDefaultAsync<AttendanceRecord>(
-                @"SELECT * FROM AttendanceRecords
+                @"SELECT * 
+                  FROM dbo.AttendanceRecords
                   WHERE SessionId = @sessionId
-                  AND StudentId = @studentId",
+                    AND StudentId = @studentId",
                 new { sessionId, studentId });
         }
 
-        // TEACHER CREATE SESSION
-        public async Task<int> CreateSession(string title, string subject, string qrCode, DateTime expirationTime, DateTime startTime, int teacherId)
+        public async Task<bool> IsStudentEnrolledAsync(int studentId, int subjectId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"SELECT COUNT(1)
+                        FROM dbo.Enrollments
+                        WHERE StudentId = @studentId
+                          AND SubjectId = @subjectId";
+
+            var count = await connection.ExecuteScalarAsync<int>(sql, new { studentId, subjectId });
+            return count > 0;
+        }
+
+        public async Task<bool> DoesSubjectBelongToTeacherAsync(int subjectId, int teacherId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"SELECT COUNT(1)
+                        FROM dbo.Subjects
+                        WHERE Id = @subjectId
+                          AND TeacherId = @teacherId";
+
+            var count = await connection.ExecuteScalarAsync<int>(sql, new { subjectId, teacherId });
+            return count > 0;
+        }
+
+        public async Task<int> CreateSession(
+            string? title,
+            int subjectId,
+            int sectionId,
+            string qrCode,
+            DateTime expirationTime,
+            DateTime startTime,
+            DateTime? graceTime,
+            int teacherId,
+            string qrToken)
         {
             var query = @"
-        INSERT INTO AttendanceSession
-        (Title, Subject, QrCode, ExpirationTime, StartTime, TeacherId, IsActive, CreatedAt, IsClosed)
-        VALUES
-        (@Title, @Subject, @QrCode, @ExpirationTime, @StartTime, @TeacherId, 1, GETDATE(), 0);
-        SELECT CAST(SCOPE_IDENTITY() as int);
-    ";
+                INSERT INTO dbo.AttendanceSession
+                (
+                    Title,
+                    SubjectId,
+                    SectionId,
+                    QrCode,
+                    ExpirationTime,
+                    StartTime,
+                    GraceTime,
+                    TeacherId,
+                    QrToken,
+                    IsActive,
+                    CreatedAt,
+                    IsClosed
+                )
+                VALUES
+                (
+                    @Title,
+                    @SubjectId,
+                    @SectionId,
+                    @QrCode,
+                    @ExpirationTime,
+                    @StartTime,
+                    @GraceTime,
+                    @TeacherId,
+                    @QrToken,
+                    1,
+                    GETDATE(),
+                    0
+                );
+
+                SELECT CAST(SCOPE_IDENTITY() as int);
+            ";
 
             using var connection = _context.CreateConnection();
-            int sessionId = await connection.ExecuteScalarAsync<int>(query, new
+
+            return await connection.ExecuteScalarAsync<int>(query, new
             {
                 Title = title,
-                Subject = subject,
+                SubjectId = subjectId,
+                SectionId = sectionId,
                 QrCode = qrCode,
                 ExpirationTime = expirationTime,
                 StartTime = startTime,
-                TeacherId = teacherId
+                GraceTime = graceTime,
+                TeacherId = teacherId,
+                QrToken = qrToken
             });
-
-            return sessionId;
         }
-        
 
-        // INSERT ATTENDANCE
-        public async Task InsertAttendance(int sessionId, int studentId, string deviceId, string status)
+        public async Task InsertAttendance(int sessionId, int studentId, string status, string? deviceId)
         {
             using var connection = _context.CreateConnection();
 
             await connection.ExecuteAsync(
-                @"INSERT INTO AttendanceRecords
-                (SessionId, StudentId, DeviceId, Status, ScanTime)
-                VALUES
-                (@sessionId, @studentId, @deviceId, @status, GETDATE())",
-                new { sessionId, studentId, deviceId, status });
+                @"INSERT INTO dbo.AttendanceRecords
+                  (
+                      SessionId,
+                      StudentId,
+                      DeviceId,
+                      Status,
+                      ScanTime,
+                      IsValid,
+                      CreatedAt
+                  )
+                  VALUES
+                  (
+                      @sessionId,
+                      @studentId,
+                      @deviceId,
+                      @status,
+                      GETDATE(),
+                      1,
+                      GETDATE()
+                  )",
+                new { sessionId, studentId, deviceId, status }
+            );
         }
 
-        // CLOSE SESSION
-        public async Task CloseSession(int sessionId)
+        public async Task<bool> CloseSession(int sessionId, int teacherId)
         {
             using var connection = _context.CreateConnection();
 
-            await connection.ExecuteAsync(
-                @"UPDATE AttendanceSession
-                  SET IsActive = 0
-                  WHERE Id = @sessionId",
-                new { sessionId });
+            var affectedRows = await connection.ExecuteAsync(
+                @"UPDATE dbo.AttendanceSession
+                  SET IsActive = 0,
+                      IsClosed = 1
+                  WHERE Id = @sessionId
+                    AND TeacherId = @teacherId
+                    AND IsClosed = 0",
+                new { sessionId, teacherId });
+
+            return affectedRows > 0;
         }
 
-        // MARK ABSENT STUDENTS
+        public async Task UpdateQRCode(int sessionId, string qrCode)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"UPDATE dbo.AttendanceSession
+                        SET QrCode = @QrCode
+                        WHERE Id = @Id";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                QrCode = qrCode,
+                Id = sessionId
+            });
+        }
+
         public async Task MarkAbsentStudents(int sessionId)
         {
             using var connection = _context.CreateConnection();
 
-            await connection.ExecuteAsync(@"
-            INSERT INTO AttendanceRecords (SessionId, StudentId, Status)
-            SELECT @sessionId, u.Id, 'Absent'
-            FROM Users u
-            WHERE u.Role = 'Student'
-            AND NOT EXISTS (
-                SELECT 1 FROM AttendanceRecord ar
-                WHERE ar.SessionId = @sessionId
-                AND ar.StudentId = u.Id
-            )",
-            new { sessionId });
+            await connection.ExecuteAsync(
+                "dbo.SP_QRAttendanceDB_AutoAbsent",
+                new { SessionId = sessionId },
+                commandType: CommandType.StoredProcedure
+            );
+        }
+
+        public async Task<string?> GetQRCode(int sessionId, int teacherId)
+        {
+            using var connection = _context.CreateConnection();
+
+            return await connection.ExecuteScalarAsync<string?>(
+                @"SELECT QrCode
+                  FROM dbo.AttendanceSession
+                  WHERE Id = @sessionId
+                    AND TeacherId = @teacherId",
+                new { sessionId, teacherId });
+        }
+
+        public async Task<IEnumerable<dynamic>> GetAttendanceBySession(int sessionId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT 
+            u.StudentId,
+            u.FullName,
+            a.Status,
+            a.ScanTime
+        FROM dbo.AttendanceRecords a
+        INNER JOIN dbo.Users u ON a.StudentId = u.Id
+        WHERE a.SessionId = @sessionId
+        ORDER BY a.ScanTime ASC
+    ";
+
+            return await connection.QueryAsync(sql, new { sessionId });
+        }
+        public async Task<IEnumerable<dynamic>> GetDeviceLogsAsync(string? status = null)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT
+            l.Id,
+            l.StudentId,
+            u.FullName AS StudentName,
+            l.SessionId,
+            l.DeviceId,
+            l.AttemptTime,
+            l.Status,
+            l.Message
+        FROM dbo.DeviceScanLogs l
+        INNER JOIN dbo.Users u
+            ON l.StudentId = u.Id
+        WHERE (@Status IS NULL OR l.Status = @Status)
+        ORDER BY l.AttemptTime DESC";
+
+            return await connection.QueryAsync(sql, new { Status = status });
+        }
+
+        public async Task<IEnumerable<dynamic>> GetSuspiciousLogsAsync()
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT
+            l.Id,
+            l.StudentId,
+            u.FullName AS StudentName,
+            l.SessionId,
+            l.DeviceId,
+            l.AttemptTime,
+            l.Status,
+            l.Message
+        FROM dbo.DeviceScanLogs l
+        INNER JOIN dbo.Users u
+            ON l.StudentId = u.Id
+        WHERE l.Status = 'Suspicious'
+        ORDER BY l.AttemptTime DESC";
+
+            return await connection.QueryAsync(sql);
+        }
+
+        public async Task<IEnumerable<TeacherSectionSubjectsDto>> GetTeacherSectionSubjectsAsync(int teacherId)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"
+        SELECT DISTINCT
+            sec.Id AS SectionId,
+            sec.Name AS SectionName,
+            sub.Id AS SubjectId,
+            sub.Name AS SubjectName
+        FROM dbo.Users u
+        INNER JOIN dbo.Sections sec
+            ON u.SectionId = sec.Id
+        INNER JOIN dbo.Enrollments e
+            ON u.Id = e.StudentId
+        INNER JOIN dbo.Subjects sub
+            ON e.SubjectId = sub.Id
+        WHERE u.Role = 'Student'
+          AND u.SectionId IS NOT NULL
+          AND sub.TeacherId = @TeacherId
+        ORDER BY sec.Name, sub.Name;
+    ";
+
+            var rows = await connection.QueryAsync<SectionSubjectRow>(sql, new { TeacherId = teacherId });
+
+            var grouped = rows
+                .GroupBy(x => new { x.SectionId, x.SectionName })
+                .Select(g => new TeacherSectionSubjectsDto
+                {
+                    SectionId = g.Key.SectionId,
+                    SectionName = g.Key.SectionName,
+                    Subjects = g
+                        .Select(x => new TeacherSectionSubjectItemDto
+                        {
+                            SubjectId = x.SubjectId,
+                            SubjectName = x.SubjectName
+                        })
+                        .DistinctBy(x => x.SubjectId)
+                        .ToList()
+                })
+                .ToList();
+
+            return grouped;
+        }
+
+        private class SectionSubjectRow
+        {
+            public int SectionId { get; set; }
+            public string SectionName { get; set; } = string.Empty;
+            public int SubjectId { get; set; }
+            public string SubjectName { get; set; } = string.Empty;
+        }
+
+        // NEW: log every device scan attempt
+        public async Task LogDeviceScanAsync(int studentId, int? sessionId, string? deviceId, string status, string? message)
+        {
+            using var connection = _context.CreateConnection();
+
+            var sql = @"INSERT INTO dbo.DeviceScanLogs
+                        (
+                            StudentId,
+                            SessionId,
+                            DeviceId,
+                            AttemptTime,
+                            Status,
+                            Message
+                        )
+                        VALUES
+                        (
+                            @StudentId,
+                            @SessionId,
+                            @DeviceId,
+                            GETDATE(),
+                            @Status,
+                            @Message
+                        )";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                StudentId = studentId,
+                SessionId = sessionId,
+                DeviceId = deviceId,
+                Status = status,
+                Message = message
+            });
         }
     }
 }
